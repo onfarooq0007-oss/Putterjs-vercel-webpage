@@ -80,7 +80,7 @@
     .media-container img, .media-container video {
       max-width: 100%;
       border-radius: 12px;
-      margin-top: 8px;
+      margin-top: 10px;
       display: block;
     }
     
@@ -161,46 +161,55 @@
   </div>
 
   <script>
-    let currentModel = "gemini-3.1-flash-image-preview"; // Good for image generation
+    let currentModel = "gemini-3.1-flash-image-preview";
     let messages = [];
     let isSignedIn = false;
 
-    // Improved response text + media extraction
+    // FIXED: Correctly extracts image (and video) from Puter response
     function getResponseTextAndMedia(response) {
       let text = "No response received.";
       let mediaHtml = "";
 
       if (!response) return { text, mediaHtml };
 
-      // Extract text
+      // Extract main text
       if (typeof response === "string") text = response;
       else if (response.message && response.message.content) text = response.message.content;
       else if (response.content) text = response.content;
-      else if (response.text) text = response.text;
 
-      // Handle images from image-generation models
-      if (response.message && response.message.images && response.message.images.length > 0) {
-        response.message.images.forEach(imgUrl => {
-          mediaHtml += `<img src="${imgUrl}" alt="Generated image">`;
-        });
-      } else if (response.images && response.images.length > 0) {
-        response.images.forEach(imgUrl => {
-          mediaHtml += `<img src="${imgUrl}" alt="Generated image">`;
-        });
-      }
+      // Clean up the "Generated image." duplicate text
+      text = String(text).replace(/Generated image\./gi, "").trim();
+      if (!text) text = "Here is your generated image:";
 
-      // Handle videos (if any model returns video URLs)
-      if (response.message && response.message.videos && response.message.videos.length > 0) {
-        response.message.videos.forEach(vidUrl => {
-          mediaHtml += `<video controls><source src="${vidUrl}" type="video/mp4">Your browser does not support video.</video>`;
-        });
-      } else if (response.videos && response.videos.length > 0) {
-        response.videos.forEach(vidUrl => {
-          mediaHtml += `<video controls><source src="${vidUrl}" type="video/mp4">Your browser does not support video.</video>`;
-        });
-      }
+      // Extract IMAGES (Gemini image models)
+      let images = [];
+      if (response.message && response.message.images) images = response.message.images;
+      else if (response.images) images = response.images;
 
-      return { text: String(text).trim(), mediaHtml };
+      images.forEach(item => {
+        let url = null;
+        if (item.image_url && item.image_url.url) url = item.image_url.url;
+        else if (item.url) url = item.url;
+        else if (typeof item === "string") url = item;
+
+        if (url) {
+          mediaHtml += `<div class="media-container"><img src="${url}" alt="Generated image"></div>`;
+        }
+      });
+
+      // Extract VIDEOS (if any)
+      let videos = [];
+      if (response.message && response.message.videos) videos = response.message.videos;
+      else if (response.videos) videos = response.videos;
+
+      videos.forEach(item => {
+        let url = item.url || item;
+        if (url) {
+          mediaHtml += `<div class="media-container"><video controls><source src="${url}" type="video/mp4">Your browser does not support video.</video></div>`;
+        }
+      });
+
+      return { text, mediaHtml };
     }
 
     async function loadModels() {
@@ -217,7 +226,6 @@
           select.appendChild(opt);
         });
       } catch (e) {
-        // Fallback
         const popular = ["gemini-3.1-flash-image-preview", "claude-opus-4-5", "gpt-5-nano", "grok-4"];
         select.innerHTML = '';
         popular.forEach(m => {
@@ -256,7 +264,7 @@
       container.innerHTML = '';
 
       if (messages.length === 0) {
-        container.innerHTML = `<div class="empty-state"><h2>Welcome to Puter AI</h2><p>Sign in and try image prompts like "Create an image of an Indian boy"</p></div>`;
+        container.innerHTML = `<div class="empty-state"><h2>Welcome to Puter AI</h2><p>Try: "Create an image of an Indian woman"</p></div>`;
         return;
       }
 
@@ -290,7 +298,7 @@
         const response = await puter.ai.chat(text, { model: currentModel });
         const { text: aiText, mediaHtml } = getResponseTextAndMedia(response);
         
-        messages[thinkingIndex].text = aiText || "Generated image/video.";
+        messages[thinkingIndex].text = aiText;
         messages[thinkingIndex].mediaHtml = mediaHtml;
         renderMessages();
       } catch (err) {

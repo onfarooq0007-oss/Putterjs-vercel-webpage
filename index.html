@@ -33,11 +33,7 @@
       z-index: 10;
     }
     
-    .logo {
-      font-size: 20px;
-      font-weight: 700;
-      color: #2383e2;
-    }
+    .logo { font-size: 20px; font-weight: 700; color: #2383e2; }
     
     .top-bar {
       background: #1a1a1a;
@@ -77,26 +73,15 @@
       word-wrap: break-word;
     }
     
-    .user {
-      align-self: flex-end;
-      background: #2383e2;
-      border-bottom-right-radius: 6px;
-    }
+    .user { align-self: flex-end; background: #2383e2; border-bottom-right-radius: 6px; }
+    .ai { align-self: flex-start; background: #2a2a2a; border-bottom-left-radius: 6px; }
+    .system { align-self: center; background: #333; font-size: 14px; padding: 8px 16px; border-radius: 9999px; text-align: center; max-width: 90%; }
     
-    .ai {
-      align-self: flex-start;
-      background: #2a2a2a;
-      border-bottom-left-radius: 6px;
-    }
-    
-    .system {
-      align-self: center;
-      background: #333;
-      font-size: 14px;
-      padding: 8px 16px;
-      border-radius: 9999px;
-      text-align: center;
-      max-width: 90%;
+    .media-container img, .media-container video {
+      max-width: 100%;
+      border-radius: 12px;
+      margin-top: 8px;
+      display: block;
     }
     
     .input-area {
@@ -107,11 +92,7 @@
       bottom: 0;
     }
     
-    .input-wrapper {
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-    }
+    .input-wrapper { display: flex; gap: 10px; align-items: flex-end; }
     
     input {
       flex: 1;
@@ -121,11 +102,6 @@
       background: #2a2a2a;
       color: white;
       font-size: 16px;
-    }
-    
-    input:focus {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(35, 131, 226, 0.4);
     }
     
     button {
@@ -179,54 +155,57 @@
 
   <div class="input-area">
     <div class="input-wrapper">
-      <input 
-        type="text" 
-        id="userInput" 
-        placeholder="Type your message..." 
-        onkeypress="if(event.key === 'Enter') sendMessage()">
+      <input type="text" id="userInput" placeholder="Type your message..." onkeypress="if(event.key === 'Enter') sendMessage()">
       <button onclick="sendMessage()">Send</button>
     </div>
   </div>
 
   <script>
-    let currentModel = "claude-opus-4-5";
+    let currentModel = "gemini-3.1-flash-image-preview"; // Good for image generation
     let messages = [];
     let isSignedIn = false;
 
-    // Stronger extraction of AI response text
-    function getResponseText(response) {
-      if (!response) return "No response received.";
+    // Improved response text + media extraction
+    function getResponseTextAndMedia(response) {
+      let text = "No response received.";
+      let mediaHtml = "";
 
-      // Case 1: Plain string
-      if (typeof response === "string") return response;
+      if (!response) return { text, mediaHtml };
 
-      // Case 2: Standard Puter format { message: { content: "..." } }
-      if (response.message && typeof response.message === "object") {
-        if (response.message.content) return response.message.content;
-        if (response.message.text) return response.message.text;
+      // Extract text
+      if (typeof response === "string") text = response;
+      else if (response.message && response.message.content) text = response.message.content;
+      else if (response.content) text = response.content;
+      else if (response.text) text = response.text;
+
+      // Handle images from image-generation models
+      if (response.message && response.message.images && response.message.images.length > 0) {
+        response.message.images.forEach(imgUrl => {
+          mediaHtml += `<img src="${imgUrl}" alt="Generated image">`;
+        });
+      } else if (response.images && response.images.length > 0) {
+        response.images.forEach(imgUrl => {
+          mediaHtml += `<img src="${imgUrl}" alt="Generated image">`;
+        });
       }
 
-      // Case 3: Direct content
-      if (response.content) return response.content;
-      if (response.text) return response.text;
-
-      // Case 4: Nested deeper
-      if (response.choices && response.choices[0] && response.choices[0].message) {
-        return response.choices[0].message.content || "No content";
+      // Handle videos (if any model returns video URLs)
+      if (response.message && response.message.videos && response.message.videos.length > 0) {
+        response.message.videos.forEach(vidUrl => {
+          mediaHtml += `<video controls><source src="${vidUrl}" type="video/mp4">Your browser does not support video.</video>`;
+        });
+      } else if (response.videos && response.videos.length > 0) {
+        response.videos.forEach(vidUrl => {
+          mediaHtml += `<video controls><source src="${vidUrl}" type="video/mp4">Your browser does not support video.</video>`;
+        });
       }
 
-      // Last resort: Try to show useful info
-      try {
-        return JSON.stringify(response, null, 2);
-      } catch (e) {
-        return "[Complex response received]";
-      }
+      return { text: String(text).trim(), mediaHtml };
     }
 
     async function loadModels() {
       const select = document.getElementById('modelSelect');
       select.innerHTML = '<option>Loading models...</option>';
-      
       try {
         const models = await puter.ai.listModels();
         select.innerHTML = '';
@@ -239,8 +218,9 @@
         });
       } catch (e) {
         // Fallback
+        const popular = ["gemini-3.1-flash-image-preview", "claude-opus-4-5", "gpt-5-nano", "grok-4"];
         select.innerHTML = '';
-        ["claude-opus-4-5", "gpt-5-nano", "gemini-2.5-flash", "grok-4"].forEach(m => {
+        popular.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m;
           opt.textContent = m;
@@ -259,15 +239,15 @@
       try {
         await puter.auth.signIn();
         isSignedIn = true;
-        addMessage("system", "✅ Signed in! You can now chat.");
+        addMessage("system", "✅ Signed in successfully!");
         loadModels();
       } catch (err) {
         addMessage("system", "❌ Sign in failed. Try again.");
       }
     }
 
-    function addMessage(sender, text) {
-      messages.push({ sender, text });
+    function addMessage(sender, text, mediaHtml = "") {
+      messages.push({ sender, text, mediaHtml });
       renderMessages();
     }
 
@@ -276,18 +256,14 @@
       container.innerHTML = '';
 
       if (messages.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <h2>Welcome to Puter AI</h2>
-            <p>Sign in and chat with Claude, GPT, Gemini and more.</p>
-          </div>`;
+        container.innerHTML = `<div class="empty-state"><h2>Welcome to Puter AI</h2><p>Sign in and try image prompts like "Create an image of an Indian boy"</p></div>`;
         return;
       }
 
       messages.forEach(msg => {
         const div = document.createElement('div');
         div.className = `message ${msg.sender}`;
-        div.innerHTML = String(msg.text).replace(/\n/g, '<br>');
+        div.innerHTML = String(msg.text).replace(/\n/g, '<br>') + (msg.mediaHtml || "");
         container.appendChild(div);
       });
       
@@ -312,11 +288,13 @@
 
       try {
         const response = await puter.ai.chat(text, { model: currentModel });
-        const aiText = getResponseText(response);
-        messages[thinkingIndex].text = aiText;
+        const { text: aiText, mediaHtml } = getResponseTextAndMedia(response);
+        
+        messages[thinkingIndex].text = aiText || "Generated image/video.";
+        messages[thinkingIndex].mediaHtml = mediaHtml;
         renderMessages();
       } catch (err) {
-        messages[thinkingIndex].text = "❌ Error: " + (err.message || "Failed to get reply.");
+        messages[thinkingIndex].text = `❌ Error: ${err.message || "Failed to get reply."}`;
         renderMessages();
       }
     }

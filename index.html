@@ -77,11 +77,24 @@
     .ai { align-self: flex-start; background: #2a2a2a; border-bottom-left-radius: 6px; }
     .system { align-self: center; background: #333; font-size: 14px; padding: 8px 16px; border-radius: 9999px; text-align: center; max-width: 90%; }
     
-    .media-container img, .media-container video {
+    .media-container {
+      margin-top: 10px;
+    }
+    .media-container img {
       max-width: 100%;
       border-radius: 12px;
-      margin-top: 10px;
       display: block;
+    }
+    .download-btn {
+      margin-top: 8px;
+      background: #2383e2;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 9999px;
+      font-size: 15px;
+      font-weight: 600;
+      width: 100%;
     }
     
     .input-area {
@@ -92,23 +105,38 @@
       bottom: 0;
     }
     
-    .input-wrapper { display: flex; gap: 10px; align-items: flex-end; }
+    .input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #2a2a2a;
+      border-radius: 9999px;
+      padding: 6px 12px;
+    }
     
     input {
       flex: 1;
-      padding: 16px 20px;
+      padding: 12px 16px;
       border: none;
-      border-radius: 9999px;
-      background: #2a2a2a;
+      background: transparent;
       color: white;
       font-size: 16px;
+      outline: none;
     }
     
-    button {
+    .upload-btn {
+      font-size: 26px;
+      background: none;
+      border: none;
+      padding: 6px;
+      cursor: pointer;
+    }
+    
+    button.send-btn {
       background: #2383e2;
       color: white;
       border: none;
-      padding: 14px 24px;
+      padding: 12px 24px;
       border-radius: 9999px;
       font-weight: 600;
       font-size: 16px;
@@ -155,61 +183,89 @@
 
   <div class="input-area">
     <div class="input-wrapper">
-      <input type="text" id="userInput" placeholder="Type your message..." onkeypress="if(event.key === 'Enter') sendMessage()">
-      <button onclick="sendMessage()">Send</button>
+      <button class="upload-btn" onclick="triggerImageUpload()">📎</button>
+      <input type="text" id="userInput" placeholder="Type message or describe image..." onkeypress="if(event.key === 'Enter') sendMessage()">
+      <button class="send-btn" onclick="sendMessage()">Send</button>
+      
+      <!-- Hidden file input -->
+      <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
     </div>
   </div>
 
   <script>
-    let currentModel = "gemini-3.1-flash-image-preview";
+    let currentModel = "gemini-3.1-flash"; // Good vision model
     let messages = [];
     let isSignedIn = false;
+    let pendingImageFile = null;   // Stores the uploaded image temporarily
 
-    // FIXED: Correctly extracts image (and video) from Puter response
     function getResponseTextAndMedia(response) {
       let text = "No response received.";
       let mediaHtml = "";
 
       if (!response) return { text, mediaHtml };
 
-      // Extract main text
       if (typeof response === "string") text = response;
       else if (response.message && response.message.content) text = response.message.content;
       else if (response.content) text = response.content;
 
-      // Clean up the "Generated image." duplicate text
       text = String(text).replace(/Generated image\./gi, "").trim();
       if (!text) text = "Here is your generated image:";
 
-      // Extract IMAGES (Gemini image models)
+      // Generated images (from image models)
       let images = [];
       if (response.message && response.message.images) images = response.message.images;
       else if (response.images) images = response.images;
 
       images.forEach(item => {
-        let url = null;
-        if (item.image_url && item.image_url.url) url = item.image_url.url;
-        else if (item.url) url = item.url;
-        else if (typeof item === "string") url = item;
-
+        let url = item.image_url && item.image_url.url ? item.image_url.url : (item.url || item);
         if (url) {
-          mediaHtml += `<div class="media-container"><img src="${url}" alt="Generated image"></div>`;
-        }
-      });
-
-      // Extract VIDEOS (if any)
-      let videos = [];
-      if (response.message && response.message.videos) videos = response.message.videos;
-      else if (response.videos) videos = response.videos;
-
-      videos.forEach(item => {
-        let url = item.url || item;
-        if (url) {
-          mediaHtml += `<div class="media-container"><video controls><source src="${url}" type="video/mp4">Your browser does not support video.</video></div>`;
+          mediaHtml += `
+            <div class="media-container">
+              <img src="${url}" alt="Generated image">
+              <button class="download-btn" onclick="downloadImage('${url}')">⬇️ Download HD</button>
+            </div>`;
         }
       });
 
       return { text, mediaHtml };
+    }
+
+    function downloadImage(url) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `puter-ai-image-hd.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Trigger hidden file input
+    function triggerImageUpload() {
+      document.getElementById('imageUpload').click();
+    }
+
+    // Handle image selection
+    function handleImageUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      pendingImageFile = file;
+      
+      // Show immediate preview in chat
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const previewHtml = `
+          <div style="margin-top:8px;">
+            <img src="${ev.target.result}" style="max-width:220px; border-radius:12px; border:2px solid #2383e2;">
+            <p style="font-size:13px; margin-top:4px; opacity:0.8;">📸 Image attached</p>
+          </div>`;
+        
+        addMessage("user", "Sent an image", previewHtml);
+      };
+      reader.readAsDataURL(file);
+      
+      // Clear the input so user can select again later
+      e.target.value = '';
     }
 
     async function loadModels() {
@@ -226,7 +282,7 @@
           select.appendChild(opt);
         });
       } catch (e) {
-        const popular = ["gemini-3.1-flash-image-preview", "claude-opus-4-5", "gpt-5-nano", "grok-4"];
+        const popular = ["gemini-3.1-flash", "claude-opus-4-5", "gpt-5-nano", "grok-4"];
         select.innerHTML = '';
         popular.forEach(m => {
           const opt = document.createElement('option');
@@ -254,8 +310,8 @@
       }
     }
 
-    function addMessage(sender, text, mediaHtml = "") {
-      messages.push({ sender, text, mediaHtml });
+    function addMessage(sender, text, extraHtml = "") {
+      messages.push({ sender, text, extraHtml });
       renderMessages();
     }
 
@@ -264,14 +320,14 @@
       container.innerHTML = '';
 
       if (messages.length === 0) {
-        container.innerHTML = `<div class="empty-state"><h2>Welcome to Puter AI</h2><p>Try: "Create an image of an Indian woman"</p></div>`;
+        container.innerHTML = `<div class="empty-state"><h2>Welcome to Puter AI</h2><p>Upload images with 📎 and ask the AI anything about them!</p></div>`;
         return;
       }
 
       messages.forEach(msg => {
         const div = document.createElement('div');
         div.className = `message ${msg.sender}`;
-        div.innerHTML = String(msg.text).replace(/\n/g, '<br>') + (msg.mediaHtml || "");
+        div.innerHTML = String(msg.text).replace(/\n/g, '<br>') + (msg.extraHtml || "");
         container.appendChild(div);
       });
       
@@ -281,25 +337,46 @@
     async function sendMessage() {
       const input = document.getElementById('userInput');
       const text = input.value.trim();
-      if (!text) return;
+      
+      if (!text && !pendingImageFile) return;
 
       if (!isSignedIn) {
         addMessage("system", "Please sign in first.");
         return;
       }
 
-      addMessage("user", text);
+      // Show user message
+      let userExtra = "";
+      if (pendingImageFile) {
+        const reader = new FileReader();
+        reader.onload = function() {
+          // Already showed preview in handleImageUpload
+        };
+      }
+      addMessage("user", text || "Sent an image");
+
       input.value = '';
 
       const thinkingIndex = messages.length;
       addMessage("ai", "Thinking...");
 
       try {
-        const response = await puter.ai.chat(text, { model: currentModel });
+        let response;
+        if (pendingImageFile) {
+          // Send image + text (vision)
+          response = await puter.ai.chat(text || "Describe this image in detail", {
+            model: currentModel,
+            image: pendingImageFile
+          });
+          pendingImageFile = null; // clear after sending
+        } else {
+          response = await puter.ai.chat(text, { model: currentModel });
+        }
+
         const { text: aiText, mediaHtml } = getResponseTextAndMedia(response);
         
         messages[thinkingIndex].text = aiText;
-        messages[thinkingIndex].mediaHtml = mediaHtml;
+        messages[thinkingIndex].extraHtml = mediaHtml;
         renderMessages();
       } catch (err) {
         messages[thinkingIndex].text = `❌ Error: ${err.message || "Failed to get reply."}`;
@@ -309,6 +386,7 @@
 
     function newChat() {
       messages = [];
+      pendingImageFile = null;
       renderMessages();
     }
 
@@ -318,4 +396,4 @@
     };
   </script>
 </body>
-</html>
+  </html>
